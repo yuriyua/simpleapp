@@ -31,6 +31,13 @@
 	Router::connect('/pages/*', array('controller' => 'pages', 'action' => 'display'));
 
 /**
+ * User app.
+ */
+	Router::connect('/login', array('controller' => 'users', 'action' => 'login'));
+	Router::connect('/signup', array('controller' => 'users', 'action' => 'signup'));
+	Router::connect('/oauth2callback', array('controller' => 'users', 'action' => 'oauth2callback'));
+
+/**
  * Load all plugin routes. See the CakePlugin documentation on
  * how to customize the loading of plugin routes.
  */
