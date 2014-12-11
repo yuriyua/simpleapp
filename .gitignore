@@ -1,14 +1,17 @@
 # User specific & automatically generated files #
 #################################################
 /app/Config/database.php
+/app/Plugin/DebugKit
 /app/tmp
 /lib/Cake/Console/Templates/skel/tmp/
 /plugins
+/vendor
 /vendors
 /build
 /dist
 /tags
 *.mo
+composer.lock
 
 # IDE and editor specific files #
 #################################
