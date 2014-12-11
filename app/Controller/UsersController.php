@@ -98,7 +98,7 @@ class UsersController extends AppController {
 		if ($user == null) {
 			$this->loadModel('UsersContact');
 
-			$return = $this->User->save(array(
+			$user = $this->User->save(array(
 				'email' => $profile_email,
 				'first_name' => $profile->getName()->givenName,
 				'last_name' => $profile->getName()->familyName,
@@ -108,8 +108,6 @@ class UsersController extends AppController {
 				$this->Session->setFlash(__('The user could not be saved. Please, try again.'));
 				return $this->redirect('/');
 			}
-
-			$user = $return['User'];
 
 			$link = 'https://www.google.com/m8/feeds/contacts/default/full?alt=json';
 
@@ -125,7 +123,7 @@ class UsersController extends AppController {
 						}
 
 						$data = array(	
-							'user_id' => $user['id'],
+							'user_id' => $user['User']['id'],
 							'google_id' => preg_replace('/^.+\//', '', $contact['id']['$t'])
 						);
 
@@ -183,7 +181,9 @@ class UsersController extends AppController {
 			} while (true);
 		}
 
-		if (!$this->Auth->login($user)) {
+		$user['User']['access_token'] = $client->getAccessToken();
+
+		if (!$this->Auth->login($user['User'])) {
 			$this->Session->setFlash(__('Invalid user data.'));
 			return $this->redirect('/');
 		}
@@ -193,6 +193,106 @@ class UsersController extends AppController {
 
 	public function logout() {
 		return $this->redirect($this->Auth->logout());
+	}
+
+	public function meetings() {
+		if (!$this->Auth->loggedIn()) {
+			return $this->redirect('/');
+		}
+
+		$sort = isset($this->request->data['Users']['sort']) ? $this->request->data['Users']['sort'] : null;
+		$keywords = isset($this->request->data['Users']['keywords']) && trim($this->request->data['Users']['keywords']) !== ''
+			? $this->request->data['Users']['keywords'] : null;
+
+		$client = new Google_Client();
+		$client->setClientId(Configure::read('GoogleAPI.client_id'));
+		$client->setClientSecret(Configure::read('GoogleAPI.client_secret'));
+		$client->setRedirectUri(h(Router::url(array('controller' => 'users', 'action' => 'oauth2callback'), true)));
+		$client->setAccessType('offline');
+		$client->setAccessToken($this->Auth->user('access_token'));
+
+		$calendar_service = new Google_Service_Calendar($client);
+		$calendars = $calendar_service->calendarList->listCalendarList()->getItems();
+
+		$calendar_emails = array();
+		$now = time();
+
+		if (count($calendars))
+		{
+			foreach ($calendars as $calendar)
+			{
+				$events = $calendar_service->events->listEvents($calendar->id)->getItems();
+
+				if (count($events))
+				{
+					foreach ($events as $event)
+					{
+						$attendees = $event->getAttendees();
+
+						if (count($attendees) > 1)
+						{
+							$start_time = strtotime($event->getStart()->getDateTime());
+
+							foreach ($attendees as $attendee)
+							{
+								$email = $attendee->getEmail();
+
+								if ($email != $this->Auth->user('email') && ($keywords === null || strpos($email, $keywords) !== false))
+								{
+									if ($sort == 'frequently')
+									{
+										if (isset($calendar_emails[$email]))
+										{
+											$calendar_emails[$email]++;
+										}
+										else
+										{
+											$calendar_emails[$email] = 1;
+										}
+									}
+									else
+									{
+										if (!isset($calendar_emails[$email]) || $calendar_emails[$email] < $start_time &&
+											($calendar_emails[$email] <= $now && $start_time <= $now || $calendar_emails[$email] > $now))
+										{
+											$calendar_emails[$email] = $start_time;
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if (count($calendar_emails))
+			{
+				if ($sort == 'frequently')
+				{
+					arsort($calendar_emails);
+				}
+				else
+				{
+					$__calendar_emails = array();
+
+					foreach ($calendar_emails as $email => $time)
+					{
+						if ($time <= $now)
+						{
+							$__calendar_emails[$email] = $time;
+							unset($calendar_emails[$email]);
+						}
+					}
+
+					arsort($__calendar_emails);
+					asort($calendar_emails);
+
+					$calendar_emails = array_merge($__calendar_emails, $calendar_emails);
+				}
+			}
+		}
+
+		$this->set('emails', array_keys($calendar_emails));
 	}
 
 }

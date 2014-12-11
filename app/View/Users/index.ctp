@@ -7,7 +7,7 @@
 		<a href="<?php echo h(Router::url(array('controller' => 'users_contacts', 'action' => 'index'))); ?>">Contacts List</a>
 	</div>
 	<div class="row">
-		<a href="#">Meeting List</a>
+		<a href="<?php echo h(Router::url(array('controller' => 'users', 'action' => 'meetings'))); ?>">Meeting List</a>
 	</div>
 <?php else: ?>
 	<div class="row">
