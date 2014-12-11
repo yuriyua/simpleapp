@@ -112,3 +112,4 @@ CakeLog::config('error', array(
  * Configures simple app
  */
 Configure::load('google_api');
+App::import('Vendor', array('file' => 'autoload'));
