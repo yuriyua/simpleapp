@@ -87,6 +87,7 @@ class UsersController extends AppController {
 		$client->setAccessType('offline');
 		$client->authenticate($code);
 
+		$gmail_service = new Google_Service_Gmail($client);
 		$plus_service = new Google_Service_Plus($client);
 		$profile = $plus_service->people->get('me');
 		$profile_emails = $profile->getEmails();
@@ -95,18 +96,91 @@ class UsersController extends AppController {
 		$user = $this->User->findByEmail($profile_email);
 
 		if ($user == null) {
-			$user = $this->User->save(array(
+			$this->loadModel('UsersContact');
+
+			$return = $this->User->save(array(
 				'email' => $profile_email,
 				'first_name' => $profile->getName()->givenName,
 				'last_name' => $profile->getName()->familyName,
 			));
 
-			if (!$user) {
+			if (!$return) {
 				$this->Session->setFlash(__('The user could not be saved. Please, try again.'));
 				return $this->redirect('/');
 			}
 
-			// TODO: save user contacts
+			$user = $return['User'];
+
+			$link = 'https://www.google.com/m8/feeds/contacts/default/full?alt=json';
+
+			do {
+				$request = new Google_Http_Request($link);
+				$return = $client->getAuth()->authenticatedRequest($request);
+				$contacts_response = Google_Http_REST::decodeHttpResponse($return);
+
+				if (count($contacts_response['feed']['entry'])) {
+					foreach ($contacts_response['feed']['entry'] as $contact) {
+						if (!empty($contact['gd$email'][0]['address']) && $contact['gd$email'][0]['address'] == $profile_email) {
+							continue;
+						}
+
+						$data = array(	
+							'user_id' => $user['id'],
+							'google_id' => preg_replace('/^.+\//', '', $contact['id']['$t'])
+						);
+
+						if (!empty($contact['title']['$t'])) {
+							$data['name'] = $contact['title']['$t'];
+						}
+
+						if (!empty($contact['gd$phoneNumber'][0]['$t'])) {
+							$data['phone'] = $contact['gd$phoneNumber'][0]['$t'];
+						}
+
+						if (!empty($contact['gd$email'][0]['address'])) {
+							$data['email'] = strtolower($contact['gd$email'][0]['address']);
+
+							$response = $gmail_service->users_messages->listUsersMessages('me', array('q' => 'list:' . $data['email']));
+							
+							if ($response) {
+								$data['count'] = $response->getResultSizeEstimate();
+
+								$messages = $response->getMessages();
+
+								if (count($messages)) {
+									$__message = $gmail_service->users_messages->get('me', $messages[0]->getId(), array('format' => 'full'));
+									$headers = $__message->getPayload()->getHeaders();
+
+									if (count($headers)) {
+										foreach ($headers as $header) {
+											if ($header->getName() == 'Date') {
+												$data['date'] = date('Y-m-d H:i:s', strtotime($header->getValue()));
+
+												break;
+											}
+										}
+									}
+								}
+							}
+						}
+
+						if (!$this->UsersContact->save($data)) {
+							$this->Session->setFlash(__('The contact could not be saved.'));
+							return $this->redirect('/');
+						}
+						
+						$this->UsersContact->clear();
+					}
+				}
+
+				if (!empty($contacts_response['feed']['link'][5]) && $contacts_response['feed']['link'][5]['rel'] == 'next') {
+					$link = $contacts_response['feed']['link'][5]['href'];
+				} elseif (!empty($contacts_response['feed']['link'][6]) && $contacts_response['feed']['link'][6]['rel'] == 'next') {
+					$link = $contacts_response['feed']['link'][6]['href'];
+				} else {
+					break;
+				}
+			} while (true);
 		}
 
 		if (!$this->Auth->login($user)) {
